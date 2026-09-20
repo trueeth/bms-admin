@@ -13,10 +13,13 @@ npm install
 Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://bodxktkpjtjifxaqtkbe.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 NEXT_PUBLIC_SUPABASE_TEMPLATE_BUCKET=resume-templates
 ```
+
+Use the same project as the desktop app's `SUPABASE_URL`, or the two will read
+different databases.
 
 Run locally:
 
@@ -45,19 +48,23 @@ That creates:
 Create a new Vercel project from the GitHub repo and set:
 
 ```text
-Root Directory: BMS_4_Admin_Web
+Root Directory: ./
 Framework Preset: Next.js
 ```
 
-Add these Vercel Environment Variables:
+Add these Vercel Environment Variables, each with Type `Config` and Production
+enabled. `Secret` is rejected because the `NEXT_PUBLIC_` prefix is browser-exposed
+by design:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://bodxktkpjtjifxaqtkbe.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 NEXT_PUBLIC_SUPABASE_TEMPLATE_BUCKET=resume-templates
 ```
 
-Then deploy.
+`NEXT_PUBLIC_` values are inlined at build time, so after changing any of them
+redeploy with "Use existing Build Cache" unticked. Editing them in the dashboard
+alone leaves the live bundle unchanged.
 
 ## Workflow
 

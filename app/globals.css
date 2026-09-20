@@ -209,6 +209,21 @@ label {
   width: auto;
 }
 
+.choice-group {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.choice-group legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .actions,
 .filters,
 .permission-row {

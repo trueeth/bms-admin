@@ -6,6 +6,25 @@ import { supabase, templateBucket } from "../lib/supabase";
 const PAGE_SIZE = 25;
 const DEFAULT_TIME_ZONE_LABEL = "local timezone";
 
+function confirmationSettingError(error) {
+  const message = error?.message || String(error || "Could not save confirmation URL setting.");
+  if (/require_confirmation_url|schema cache|PGRST204/i.test(message)) {
+    return new Error("The confirmation URL setting is not available on the database API yet. Reload the Supabase schema cache, then try again.");
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
+function confirmationHref(value) {
+  const url = String(value || "").trim();
+  if (!/^https?:\/\//i.test(url)) return "";
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
 const emptyBidder = {
   id: "",
   user_id: "",
@@ -15,6 +34,7 @@ const emptyBidder = {
   ip: "",
   country: "",
   active: true,
+  require_confirmation_url: false,
 };
 
 const emptyProfile = {
@@ -179,6 +199,7 @@ export default function AdminPage() {
   const profileFileInputRef = useRef(null);
   const [permissionBidderId, setPermissionBidderId] = useState("");
   const [selectedProfileIds, setSelectedProfileIds] = useState(new Set());
+  const [permissionRequireUrl, setPermissionRequireUrl] = useState(false);
   const [blockedSearch, setBlockedSearch] = useState("");
   const [blockedPage, setBlockedPage] = useState(0);
   const [blockedTotal, setBlockedTotal] = useState(0);
@@ -272,6 +293,7 @@ export default function AdminPage() {
         `profile_name.ilike.${term}`,
         `bidder_user_id.ilike.${term}`,
         `bidder_name.ilike.${term}`,
+        `confirmation_url.ilike.${term}`,
       ].join(","));
     }
 
@@ -314,6 +336,11 @@ export default function AdminPage() {
     }
   }, [blockedSearch, blockedPage]);
 
+  useEffect(() => {
+    const bidder = bidders.find((row) => row.id === permissionBidderId);
+    setPermissionRequireUrl(Boolean(bidder?.require_confirmation_url));
+  }, [permissionBidderId, bidders]);
+
   function updateBidder(name, value) {
     setBidderForm((current) => ({ ...current, [name]: value }));
   }
@@ -337,15 +364,24 @@ export default function AdminPage() {
   async function saveBidder(event) {
     event.preventDefault();
     await runRequest("Bidder saved", async () => {
-      const { id, password, ...payload } = bidderForm;
-      payload.updated_at = new Date().toISOString();
+      const { id, password } = bidderForm;
+      const payload = {
+        user_id: bidderForm.user_id,
+        name: bidderForm.name || "",
+        role: bidderForm.role || "bidder",
+        ip: bidderForm.ip || "",
+        country: bidderForm.country || "",
+        active: Boolean(bidderForm.active),
+        require_confirmation_url: Boolean(bidderForm.require_confirmation_url),
+        updated_at: new Date().toISOString(),
+      };
       if (password) {
         payload.password_hash = await sha256(password);
       }
       const result = id
         ? await supabase.from("bidders").update(payload).eq("id", id)
         : await supabase.from("bidders").insert(payload);
-      if (result.error) throw result.error;
+      if (result.error) throw confirmationSettingError(result.error);
       setBidderForm(emptyBidder);
       await refreshAll();
     });
@@ -409,9 +445,21 @@ export default function AdminPage() {
     });
   }
 
+  async function saveBidderConfirmationRule(bidderId, required) {
+    const { error } = await supabase
+      .from("bidders")
+      .update({
+        require_confirmation_url: Boolean(required),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", bidderId);
+    if (error) throw confirmationSettingError(error);
+  }
+
   async function savePermissions() {
     if (!permissionBidderId) return;
     await runRequest("Permissions saved", async () => {
+      await saveBidderConfirmationRule(permissionBidderId, permissionRequireUrl);
       const currentRows = permissions.filter((row) => row.bidder_id === permissionBidderId);
       for (const row of currentRows) {
         if (!selectedProfileIds.has(row.resume_profile_id)) {
@@ -513,6 +561,11 @@ export default function AdminPage() {
               <label>IP <input value={bidderForm.ip} onChange={(e) => updateBidder("ip", e.target.value)} /></label>
               <label>Country <input value={bidderForm.country} onChange={(e) => updateBidder("country", e.target.value)} /></label>
               <label className="check span-all"><input type="checkbox" checked={bidderForm.active} onChange={(e) => updateBidder("active", e.target.checked)} /> Active</label>
+              <fieldset className="choice-group span-all">
+                <legend>Confirmation URL</legend>
+                <label className="check"><input type="radio" name="bidder-confirm-url" checked={!bidderForm.require_confirmation_url} onChange={() => updateBidder("require_confirmation_url", false)} /> Optional — bidder can skip it</label>
+                <label className="check"><input type="radio" name="bidder-confirm-url" checked={Boolean(bidderForm.require_confirmation_url)} onChange={() => updateBidder("require_confirmation_url", true)} /> Required — bid count waits for a URL</label>
+              </fieldset>
               <div className="actions span-all">
                 <button className="primary" type="submit">Save Bidder</button>
                 <button type="button" onClick={() => setBidderForm(emptyBidder)}>Clear</button>
@@ -523,12 +576,22 @@ export default function AdminPage() {
               <h2>Bidders</h2>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Active</th><th></th></tr></thead>
+                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Active</th><th>Confirm URL</th><th></th></tr></thead>
                   <tbody>
                     {bidders.map((bidder) => (
                       <tr key={bidder.id}>
                         <td>{bidder.user_id}</td><td>{bidder.name}</td><td>{bidder.role}</td><td>{bidder.ip}</td><td>{bidder.country}</td><td>{bidder.active ? "Yes" : "No"}</td>
-                        <td><div className="row-actions"><button onClick={() => setBidderForm({ ...emptyBidder, ...bidder, password: "" })}>Edit</button><button className="danger" onClick={() => deleteRow("bidders", bidder.id, "Bidder deleted")}>Delete</button></div></td>
+                        <td>{bidder.require_confirmation_url ? "Required" : "Optional"}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button onClick={() => setBidderForm({ ...emptyBidder, ...bidder, password: "" })}>Edit</button>
+                            <button type="button" onClick={() => runRequest(bidder.require_confirmation_url ? "Confirmation URL is now optional" : "Confirmation URL is now required", async () => {
+                              await saveBidderConfirmationRule(bidder.id, !bidder.require_confirmation_url);
+                              await refreshAll();
+                            })}>{bidder.require_confirmation_url ? "Make Optional" : "Make Required"}</button>
+                            <button className="danger" onClick={() => deleteRow("bidders", bidder.id, "Bidder deleted")}>Delete</button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -579,10 +642,15 @@ export default function AdminPage() {
             <h2>Bidder Profile Permissions</h2>
             <div className="permission-row">
               <select value={permissionBidderId} onChange={(e) => setPermissionBidderId(e.target.value)}>
-                {bidders.map((bidder) => <option key={bidder.id} value={bidder.id}>{bidder.user_id} - {bidder.name}</option>)}
+                {bidders.map((bidder) => <option key={bidder.id} value={bidder.id}>{bidder.user_id} - {bidder.name}{bidder.require_confirmation_url ? " — URL required" : " — URL optional"}</option>)}
               </select>
               <button className="primary" onClick={savePermissions}>Save Permissions</button>
             </div>
+            <fieldset className="choice-group">
+              <legend>Confirmation URL for this bidder</legend>
+              <label className="check"><input type="radio" name="permission-confirm-url" checked={!permissionRequireUrl} onChange={() => setPermissionRequireUrl(false)} /> Optional — bids count after generate</label>
+              <label className="check"><input type="radio" name="permission-confirm-url" checked={permissionRequireUrl} onChange={() => setPermissionRequireUrl(true)} /> Required — bids do not count until a confirmation URL is entered</label>
+            </fieldset>
             <div className="checks">
               {profiles.map((profile) => (
                 <label className="check" key={profile.id}>
@@ -672,9 +740,11 @@ export default function AdminPage() {
             </div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Time ({logTimeZoneLabel})</th><th>Bidder</th><th>Profile</th><th>Company</th><th>Title</th><th>Site</th><th>JD Preview</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Time ({logTimeZoneLabel})</th><th>Bidder</th><th>Profile</th><th>Company</th><th>Title</th><th>Site</th><th>Confirm URL</th><th>JD Preview</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {logs.map((log) => (
+                  {logs.map((log) => {
+                    const confirmHref = confirmationHref(log.confirmation_url);
+                    return (
                     <tr key={log.id}>
                       <td>{formatLogTime(log.created_at, logTimeZone)}</td>
                       <td>{log.bidder_user_id || log.bidder_name}</td>
@@ -682,6 +752,15 @@ export default function AdminPage() {
                       <td>{log.company_name}</td>
                       <td>{log.job_title}</td>
                       <td>{log.job_site}</td>
+                      <td>
+                        {confirmHref ? (
+                          <a href={confirmHref} target="_blank" rel="noreferrer">{log.confirmation_url}</a>
+                        ) : log.confirmation_url ? (
+                          <span>{log.confirmation_url}</span>
+                        ) : (
+                          <span className="subtle">None</span>
+                        )}
+                      </td>
                       <td>{(log.job_description_content || "").slice(0, 180)}</td>
                       <td>
                         <div className="log-actions">
@@ -691,7 +770,8 @@ export default function AdminPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
