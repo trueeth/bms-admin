@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase, templateBucket } from "../lib/supabase";
+import { resumeBucket, supabase, templateBucket } from "../lib/supabase";
 
 const PAGE_SIZE = 25;
 const DEFAULT_TIME_ZONE_LABEL = "local timezone";
@@ -42,6 +42,12 @@ const emptyProfile = {
   profile_name: "",
   first_name: "",
   last_name: "",
+  resume_name: "",
+  subtitle: "",
+  location: "",
+  logic: "",
+  chatgpt_channel: "",
+  template_file_name: "",
   email: "",
   phone: "",
   last4_ssn: "",
@@ -86,6 +92,10 @@ const profileFields = [
   ["profile_name", "Profile Name"],
   ["first_name", "First Name"],
   ["last_name", "Last Name"],
+  ["resume_name", "Resume Full Name"],
+  ["subtitle", "Resume Title"],
+  ["location", "Location"],
+  ["chatgpt_channel", "ChatGPT Channel"],
   ["email", "Email"],
   ["phone", "Phone"],
   ["last4_ssn", "Last 4 SSN"],
@@ -522,6 +532,24 @@ export default function AdminPage() {
     downloadText(log.resume_content || "", safeDownloadName(log.resume_file_name || logTitle(log), "generated-resume"));
   }
 
+  // Resume Builder uploads the real .docx/.pdf, so pull the file itself out of private
+  // storage rather than re-creating a text approximation of it.
+  async function downloadStoredResume(storagePath, fallbackName) {
+    await runRequest("Download started", async () => {
+      const { data, error } = await supabase.storage.from(resumeBucket).download(storagePath);
+      if (error) throw error;
+      const url = URL.createObjectURL(data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = storagePath.split("/").pop() || fallbackName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return `Downloaded ${link.download}`;
+    });
+  }
+
   return (
     <>
       <header className="topbar">
@@ -609,7 +637,9 @@ export default function AdminPage() {
                 <label key={key}>{label}<input value={profileForm[key]} onChange={(e) => updateProfile(key, e.target.value)} /></label>
               ))}
               <label className="span-all">Education <textarea value={profileForm.education} onChange={(e) => updateProfile("education", e.target.value)} /></label>
+              <label className="span-all">Resume Builder Logic <textarea value={profileForm.logic} onChange={(e) => updateProfile("logic", e.target.value)} placeholder="Extra instructions appended to every ChatGPT request for this profile" /></label>
               <label className="span-all">Resume Template (.docx)<input ref={profileFileInputRef} type="file" accept=".docx" onChange={(e) => setTemplateFile(e.target.files?.[0] || null)} /></label>
+              <label className="span-all">Template File Name <input value={profileForm.template_file_name} onChange={(e) => updateProfile("template_file_name", e.target.value)} placeholder="Only used when no template is uploaded, e.g. 1.docx" /></label>
               <label className="span-all">Notes <textarea value={profileForm.notes} onChange={(e) => updateProfile("notes", e.target.value)} /></label>
               <label className="check span-all"><input type="checkbox" checked={profileForm.active} onChange={(e) => updateProfile("active", e.target.checked)} /> Active</label>
               <div className="actions span-all">
@@ -679,7 +709,7 @@ export default function AdminPage() {
               <div className="panel-heading">
                 <div>
                   <h2>Blocked Companies</h2>
-                  <p>Active companies are blocked in the desktop app before resume generation.</p>
+                  <p>Active companies are blocked in Resume Builder before resume generation.</p>
                 </div>
                 <span className="page-summary">
                   {blockedTotal ? `Showing ${blockedFirstRow}-${blockedLastRow} of ${blockedTotal}` : "No blocked companies"}
@@ -766,7 +796,9 @@ export default function AdminPage() {
                         <div className="log-actions">
                           <button type="button" onClick={() => openLogViewer(log, "jd")} disabled={!log.job_description_content}>View JD</button>
                           <button type="button" onClick={() => openLogViewer(log, "resume")} disabled={!log.resume_content}>View Resume</button>
-                          <button type="button" className="primary" onClick={() => downloadResume(log)} disabled={!log.resume_content}>Download</button>
+                          <button type="button" className="primary" onClick={() => downloadStoredResume(log.resume_storage_path, "resume.docx")} disabled={!log.resume_storage_path}>DOCX</button>
+                          <button type="button" onClick={() => downloadStoredResume(log.resume_pdf_storage_path, "resume.pdf")} disabled={!log.resume_pdf_storage_path}>PDF</button>
+                          <button type="button" onClick={() => downloadResume(log)} disabled={!log.resume_content}>Text</button>
                         </div>
                       </td>
                     </tr>
