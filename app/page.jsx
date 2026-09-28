@@ -33,6 +33,7 @@ const emptyBidder = {
   role: "bidder",
   ip: "",
   country: "",
+  job_site: "",
   active: true,
   require_confirmation_url: false,
 };
@@ -381,6 +382,7 @@ export default function AdminPage() {
         role: bidderForm.role || "bidder",
         ip: bidderForm.ip || "",
         country: bidderForm.country || "",
+        job_site: bidderForm.job_site || "",
         active: Boolean(bidderForm.active),
         require_confirmation_url: Boolean(bidderForm.require_confirmation_url),
         updated_at: new Date().toISOString(),
@@ -588,6 +590,7 @@ export default function AdminPage() {
               <label>Role <select value={bidderForm.role} onChange={(e) => updateBidder("role", e.target.value)}><option>bidder</option><option>owner</option></select></label>
               <label>IP <input value={bidderForm.ip} onChange={(e) => updateBidder("ip", e.target.value)} /></label>
               <label>Country <input value={bidderForm.country} onChange={(e) => updateBidder("country", e.target.value)} /></label>
+              <label>Job Site <input value={bidderForm.job_site} onChange={(e) => updateBidder("job_site", e.target.value)} placeholder="e.g. Dice" title="Recorded on every bid this bidder logs. Takes effect at their next sign-in." /></label>
               <label className="check span-all"><input type="checkbox" checked={bidderForm.active} onChange={(e) => updateBidder("active", e.target.checked)} /> Active</label>
               <fieldset className="choice-group span-all">
                 <legend>Confirmation URL</legend>
@@ -604,11 +607,11 @@ export default function AdminPage() {
               <h2>Bidders</h2>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Active</th><th>Confirm URL</th><th></th></tr></thead>
+                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Job Site</th><th>Active</th><th>Confirm URL</th><th></th></tr></thead>
                   <tbody>
                     {bidders.map((bidder) => (
                       <tr key={bidder.id}>
-                        <td>{bidder.user_id}</td><td>{bidder.name}</td><td>{bidder.role}</td><td>{bidder.ip}</td><td>{bidder.country}</td><td>{bidder.active ? "Yes" : "No"}</td>
+                        <td>{bidder.user_id}</td><td>{bidder.name}</td><td>{bidder.role}</td><td>{bidder.ip}</td><td>{bidder.country}</td><td>{bidder.job_site}</td><td>{bidder.active ? "Yes" : "No"}</td>
                         <td>{bidder.require_confirmation_url ? "Required" : "Optional"}</td>
                         <td>
                           <div className="row-actions">
