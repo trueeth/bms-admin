@@ -220,6 +220,8 @@ export default function AdminPage() {
   const [logTotal, setLogTotal] = useState(0);
   const [logTimeZone, setLogTimeZone] = useState("");
   const [logViewer, setLogViewer] = useState(null);
+  const [copyViewer, setCopyViewer] = useState(null);
+  const [copiedSection, setCopiedSection] = useState("");
 
   const envConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -518,6 +520,54 @@ export default function AdminPage() {
     });
   }
 
+  // The identifying fields first, then each employer, then the long job description.
+  // jsonb does not preserve insertion order, so the useful order is imposed here.
+  const SECTION_ORDER = ["COMPANY", "JOB TITLE", "ABOUT ME", "CORE SKILLS"];
+
+  function bidSections(log) {
+    const raw = log?.clipboard_sections;
+    let parsed = raw;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    const entries = Object.entries(parsed).filter(([, value]) => String(value || "").trim());
+    return entries.sort(([a], [b]) => {
+      const rank = (name) => {
+        const index = SECTION_ORDER.indexOf(name);
+        if (index >= 0) return index;
+        return name === "Job Description" ? SECTION_ORDER.length + 1 : SECTION_ORDER.length;
+      };
+      return rank(a) - rank(b) || a.localeCompare(b);
+    });
+  }
+
+  function openCopyViewer(log) {
+    setCopiedSection("");
+    setCopyViewer({ title: `Copy Sections - ${logTitle(log)}`, sections: bidSections(log) });
+  }
+
+  async function copySection(name, text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard access needs a secure context, so fall back to a temporary selection.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setCopiedSection(name);
+  }
+
   function downloadText(content, fileName) {
     const blob = new Blob([content || ""], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -799,6 +849,7 @@ export default function AdminPage() {
                         <div className="log-actions">
                           <button type="button" onClick={() => openLogViewer(log, "jd")} disabled={!log.job_description_content}>View JD</button>
                           <button type="button" onClick={() => openLogViewer(log, "resume")} disabled={!log.resume_content}>View Resume</button>
+                          <button type="button" onClick={() => openCopyViewer(log)} disabled={!bidSections(log).length}>Copy</button>
                           <button type="button" className="primary" onClick={() => downloadStoredResume(log.resume_storage_path, "resume.docx")} disabled={!log.resume_storage_path}>DOCX</button>
                           <button type="button" onClick={() => downloadStoredResume(log.resume_pdf_storage_path, "resume.pdf")} disabled={!log.resume_pdf_storage_path}>PDF</button>
                           <button type="button" onClick={() => downloadResume(log)} disabled={!log.resume_content}>Text</button>
@@ -825,6 +876,34 @@ export default function AdminPage() {
               </div>
             </header>
             <pre className="document-view">{logViewer.content || logViewer.emptyMessage}</pre>
+          </section>
+        </div>
+      )}
+
+      {copyViewer && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setCopyViewer(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label={copyViewer.title} onClick={(event) => event.stopPropagation()}>
+            <header className="modal-header">
+              <h2>{copyViewer.title}</h2>
+              <div className="modal-actions">
+                <button type="button" onClick={() => setCopyViewer(null)}>Close</button>
+              </div>
+            </header>
+            <div className="copy-sections">
+              {copyViewer.sections.length === 0 ? (
+                <p className="subtle">No copy sections were saved for this bid.</p>
+              ) : copyViewer.sections.map(([name, value]) => (
+                <article className="copy-section" key={name}>
+                  <div className="copy-section-header">
+                    <h3>{name}</h3>
+                    <button type="button" onClick={() => copySection(name, String(value))}>
+                      {copiedSection === name ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre>{String(value)}</pre>
+                </article>
+              ))}
+            </div>
           </section>
         </div>
       )}

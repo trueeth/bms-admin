@@ -345,6 +345,55 @@ th {
   align-items: center;
 }
 
+.copy-sections {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 18px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.copy-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.copy-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #f7faff;
+}
+
+.copy-section-header h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.copy-section-header button {
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.copy-section pre {
+  /* Long sections stay scannable without the dialog growing past the viewport. */
+  max-height: 220px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .document-view {
   min-height: 360px;
   margin: 0;
