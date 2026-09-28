@@ -6,12 +6,25 @@ import { resumeBucket, supabase, templateBucket } from "../lib/supabase";
 const PAGE_SIZE = 25;
 const DEFAULT_TIME_ZONE_LABEL = "local timezone";
 
-function confirmationSettingError(error) {
-  const message = error?.message || String(error || "Could not save confirmation URL setting.");
-  if (/require_confirmation_url|schema cache|PGRST204/i.test(message)) {
-    return new Error("The confirmation URL setting is not available on the database API yet. Reload the Supabase schema cache, then try again.");
+/**
+ * A column the API has not picked up yet fails like any other save, which sends an
+ * admin hunting for the wrong problem. PostgREST answers from a cached copy of the
+ * schema, so a column added since the last reload stays invisible until it is told.
+ */
+function settingSaveError(error, label, column) {
+  const message = error?.message || String(error || `Could not save the ${label}.`);
+  if (new RegExp(`${column}|schema cache|PGRST204`, "i").test(message)) {
+    return new Error(`The ${label} is not available on the database API yet. Reload the Supabase schema cache, then try again.`);
   }
   return error instanceof Error ? error : new Error(message);
+}
+
+function confirmationSettingError(error) {
+  return settingSaveError(error, "confirmation URL setting", "require_confirmation_url");
+}
+
+function duplicateSettingError(error) {
+  return settingSaveError(error, "repeat company setting", "allow_duplicate_company");
 }
 
 function confirmationHref(value) {
@@ -36,6 +49,7 @@ const emptyBidder = {
   job_site: "",
   active: true,
   require_confirmation_url: false,
+  allow_duplicate_company: false,
 };
 
 const emptyProfile = {
@@ -387,6 +401,7 @@ export default function AdminPage() {
         job_site: bidderForm.job_site || "",
         active: Boolean(bidderForm.active),
         require_confirmation_url: Boolean(bidderForm.require_confirmation_url),
+        allow_duplicate_company: Boolean(bidderForm.allow_duplicate_company),
         updated_at: new Date().toISOString(),
       };
       if (password) {
@@ -468,6 +483,17 @@ export default function AdminPage() {
       })
       .eq("id", bidderId);
     if (error) throw confirmationSettingError(error);
+  }
+
+  async function saveBidderDuplicateRule(bidderId, allowed) {
+    const { error } = await supabase
+      .from("bidders")
+      .update({
+        allow_duplicate_company: Boolean(allowed),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", bidderId);
+    if (error) throw duplicateSettingError(error);
   }
 
   async function savePermissions() {
@@ -647,6 +673,11 @@ export default function AdminPage() {
                 <label className="check"><input type="radio" name="bidder-confirm-url" checked={!bidderForm.require_confirmation_url} onChange={() => updateBidder("require_confirmation_url", false)} /> Optional — bidder can skip it</label>
                 <label className="check"><input type="radio" name="bidder-confirm-url" checked={Boolean(bidderForm.require_confirmation_url)} onChange={() => updateBidder("require_confirmation_url", true)} /> Required — bid count waits for a URL</label>
               </fieldset>
+              <fieldset className="choice-group span-all">
+                <legend>Repeat companies</legend>
+                <label className="check"><input type="radio" name="bidder-duplicate" checked={!bidderForm.allow_duplicate_company} onChange={() => updateBidder("allow_duplicate_company", false)} /> Blocked — one bid per company per profile, whoever sent it</label>
+                <label className="check"><input type="radio" name="bidder-duplicate" checked={Boolean(bidderForm.allow_duplicate_company)} onChange={() => updateBidder("allow_duplicate_company", true)} /> Allowed — this bidder may bid a company the profile already reached</label>
+              </fieldset>
               <div className="actions span-all">
                 <button className="primary" type="submit">Save Bidder</button>
                 <button type="button" onClick={() => setBidderForm(emptyBidder)}>Clear</button>
@@ -657,15 +688,20 @@ export default function AdminPage() {
               <h2>Bidders</h2>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Job Site</th><th>Active</th><th>Confirm URL</th><th></th></tr></thead>
+                  <thead><tr><th>User ID</th><th>Name</th><th>Role</th><th>IP</th><th>Country</th><th>Job Site</th><th>Active</th><th>Confirm URL</th><th>Repeat Co.</th><th></th></tr></thead>
                   <tbody>
                     {bidders.map((bidder) => (
                       <tr key={bidder.id}>
                         <td>{bidder.user_id}</td><td>{bidder.name}</td><td>{bidder.role}</td><td>{bidder.ip}</td><td>{bidder.country}</td><td>{bidder.job_site}</td><td>{bidder.active ? "Yes" : "No"}</td>
                         <td>{bidder.require_confirmation_url ? "Required" : "Optional"}</td>
+                        <td>{bidder.allow_duplicate_company ? "Allowed" : "Blocked"}</td>
                         <td>
                           <div className="row-actions">
                             <button onClick={() => setBidderForm({ ...emptyBidder, ...bidder, password: "" })}>Edit</button>
+                            <button type="button" onClick={() => runRequest(bidder.allow_duplicate_company ? "Repeat companies are now blocked" : "Repeat companies are now allowed", async () => {
+                              await saveBidderDuplicateRule(bidder.id, !bidder.allow_duplicate_company);
+                              await refreshAll();
+                            })}>{bidder.allow_duplicate_company ? "Block Repeats" : "Allow Repeats"}</button>
                             <button type="button" onClick={() => runRequest(bidder.require_confirmation_url ? "Confirmation URL is now optional" : "Confirmation URL is now required", async () => {
                               await saveBidderConfirmationRule(bidder.id, !bidder.require_confirmation_url);
                               await refreshAll();
